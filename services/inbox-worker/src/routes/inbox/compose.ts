@@ -88,6 +88,7 @@ app.post("/", zValidator("json", composeSchema), async (c) => {
 				subject: body.subject,
 				html: body.html,
 				text: body.text,
+				attachments: body.attachments,
 			},
 		);
 

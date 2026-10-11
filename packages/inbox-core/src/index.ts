@@ -210,6 +210,24 @@ export const inboxTemplateSchema = z.object({
 
 export type InboxTemplateInput = z.infer<typeof inboxTemplateSchema>;
 
+/** Outbound attachment. `content` is base64. Cloudflare caps a whole message at 5 MiB. */
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+export const attachmentSchema = z.object({
+	filename: z.string().min(1).max(255),
+	content: z.string().min(1),
+	type: z.string().default("application/octet-stream"),
+	disposition: z.enum(["attachment", "inline"]).default("attachment"),
+	contentId: z.string().optional(),
+});
+
+export const attachmentsSchema = z
+	.array(attachmentSchema)
+	.max(10)
+	.refine((a) => a.reduce((n, x) => n + Math.floor((x.content.length * 3) / 4), 0) <= MAX_ATTACHMENT_BYTES, {
+		message: "Attachments exceed the 5 MiB message limit",
+	});
+
 /** POST /api/inbox/compose — compose and send a new outbound email. */
 export const composeSchema = z.object({
 	to: z.string().email(),
@@ -221,6 +239,7 @@ export const composeSchema = z.object({
 	inReplyTo: z.string().optional(),
 	references: z.string().optional(),
 	personId: z.string().optional(),
+	attachments: attachmentsSchema.optional(),
 });
 
 export type ComposeInput = z.infer<typeof composeSchema>;

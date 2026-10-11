@@ -118,6 +118,24 @@ export interface UnsubscribeTokenRow {
  * POST /v1/send — transactional email send payload.
  * Identical between email-server and email-worker.
  */
+/** Outbound attachment. `content` is base64. Cloudflare caps a whole message at 5 MiB. */
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+export const attachmentSchema = z.object({
+	filename: z.string().min(1).max(255),
+	content: z.string().min(1),
+	type: z.string().default("application/octet-stream"),
+	disposition: z.enum(["attachment", "inline"]).default("attachment"),
+	contentId: z.string().optional(),
+});
+
+export const attachmentsSchema = z
+	.array(attachmentSchema)
+	.max(10)
+	.refine((a) => a.reduce((n, x) => n + Math.floor((x.content.length * 3) / 4), 0) <= MAX_ATTACHMENT_BYTES, {
+		message: "Attachments exceed the 5 MiB message limit",
+	});
+
 export const sendSchema = z
 	.object({
 		from: z.string().email(),
@@ -135,6 +153,7 @@ export const sendSchema = z
 		listId: z.string().optional(),
 		listUnsubscribe: z.string().optional(),
 		listUnsubscribePost: z.boolean().optional(),
+		attachments: attachmentsSchema.optional(),
 	})
 	.refine((d) => d.templateId || d.templateSlug || d.html || d.text, {
 		message: "Provide templateId, templateSlug, or at least one of html/text",
@@ -516,6 +535,7 @@ export interface SendWithLogMessage {
 	text?: string;
 	replyTo?: string;
 	headers?: Record<string, string>;
+	attachments?: Array<z.infer<typeof attachmentSchema>>;
 }
 
 export interface SendWithLogOptions {
