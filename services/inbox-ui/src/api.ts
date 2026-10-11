@@ -196,12 +196,20 @@ export async function markRead(personId: string): Promise<void> {
 
 // ── Compose / Reply ───────────────────────────────────────────────────────────
 
+export interface OutboundAttachment {
+	filename: string;
+	/** base64 */
+	content: string;
+	type: string;
+}
+
 export async function composeSend(params: {
 	from: string;
 	to: string;
 	subject: string;
 	text: string;
 	personId?: string;
+	attachments?: OutboundAttachment[];
 }): Promise<{ ok: boolean; id: string; threadId: string; personId?: string }> {
 	const { data } = await api.post("/api/inbox/compose", params);
 	return data;
@@ -215,6 +223,7 @@ export async function replyTo(params: {
 	text: string;
 	replyToMessageId: string;
 	references?: string;
+	attachments?: OutboundAttachment[];
 }): Promise<void> {
 	await api.post("/api/inbox/compose", {
 		to: params.to,
@@ -224,6 +233,7 @@ export async function replyTo(params: {
 		inReplyTo: params.replyToMessageId,
 		references: params.references,
 		personId: params.personId,
+		attachments: params.attachments,
 	});
 }
 

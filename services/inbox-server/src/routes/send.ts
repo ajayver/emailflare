@@ -128,6 +128,7 @@ app.post("/", zValidator("json", sendSchema), async (c) => {
 					html,
 					text,
 					replyTo: body.replyTo,
+					attachments: body.attachments,
 					...(unsubscribeHeaders ? { headers: unsubscribeHeaders } : {}),
 				},
 			);

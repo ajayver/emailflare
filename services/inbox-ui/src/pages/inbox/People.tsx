@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, Search, Send, MailOpen, ChevronDown, ChevronRight, Reply, PenLine } from "lucide-react";
+import { Loader2, Search, Send, MailOpen, ChevronDown, ChevronRight, Reply, PenLine, Paperclip, X } from "lucide-react";
 import {
 	getPeople,
 	getThread,
 	markRead,
 	replyTo,
 	composeSend,
+	OutboundAttachment,
 	getInboxes,
 	Person,
 	Thread,
@@ -16,6 +17,26 @@ import { cn } from "@/lib/utils";
 import { groupThread, replyReferences, ThreadGroup } from "@/lib/threading";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import OwnerAccessBanner from "../../components/OwnerAccessBanner";
+
+const MAX_ATTACH_BYTES = 5 * 1024 * 1024; // Cloudflare's per-message limit
+
+function readAsAttachment(file: File): Promise<OutboundAttachment> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onerror = () => reject(reader.error);
+		reader.onload = () => {
+			const url = reader.result as string; // data:<type>;base64,<content>
+			resolve({
+				filename: file.name,
+				content: url.slice(url.indexOf(",") + 1),
+				type: file.type || "application/octet-stream",
+			});
+		};
+		reader.readAsDataURL(file);
+	});
+}
+
+const attachmentBytes = (a: OutboundAttachment) => Math.floor((a.content.length * 3) / 4);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -329,6 +350,8 @@ export default function People() {
 	const [composeSubject, setComposeSubject] = useState("");
 	const [composeBody, setComposeBody] = useState("");
 	const [composeSending, setComposeSending] = useState(false);
+	const [composeAttachments, setComposeAttachments] = useState<OutboundAttachment[]>([]);
+	const [attachError, setAttachError] = useState<string | null>(null);
 	const [replyTarget, setReplyTarget] = useState<ThreadItem | null>(null);
 
 	function loadPeople() {
@@ -373,6 +396,8 @@ export default function People() {
 		setComposeFrom(inboxes[0]?.email ?? "");
 		setComposeSubject("");
 		setComposeBody("");
+		setComposeAttachments([]);
+		setAttachError(null);
 		setComposeOpen(true);
 	}
 
@@ -383,7 +408,21 @@ export default function People() {
 		setComposeFrom(target.inbox_address ?? inboxes[0]?.email ?? "");
 		setComposeSubject(target.direction === "inbound" ? `Re: ${target.subject ?? ""}` : (target.subject ?? ""));
 		setComposeBody("");
+		setComposeAttachments([]);
+		setAttachError(null);
 		setComposeOpen(true);
+	}
+
+	async function handleAttach(files: FileList | null) {
+		if (!files?.length) return;
+		const added = await Promise.all(Array.from(files).map(readAsAttachment));
+		const next = [...composeAttachments, ...added];
+		if (next.reduce((n, a) => n + attachmentBytes(a), 0) > MAX_ATTACH_BYTES) {
+			setAttachError("Attachments are limited to 5 MB in total.");
+			return;
+		}
+		setAttachError(null);
+		setComposeAttachments(next);
 	}
 
 	async function handleComposeSend() {
@@ -397,6 +436,7 @@ export default function People() {
 					from: composeFrom,
 					subject: composeSubject,
 					text: composeBody.trim(),
+					attachments: composeAttachments.length ? composeAttachments : undefined,
 					replyToMessageId: replyTarget.message_id ?? "",
 					references: replyReferences(replyTarget),
 				});
@@ -406,6 +446,7 @@ export default function People() {
 					from: composeFrom,
 					subject: composeSubject,
 					text: composeBody.trim(),
+					attachments: composeAttachments.length ? composeAttachments : undefined,
 					personId: selectedId ?? undefined,
 				});
 				// If this was a brand-new contact, select it
@@ -574,6 +615,41 @@ export default function People() {
 							rows={8}
 							className="w-full px-3 py-2.5 rounded-md border border-border text-[13px] outline-none resize-none focus:border-orange-300"
 						/>
+						<div className="flex flex-col gap-1.5">
+							<label className="inline-flex items-center gap-1.5 self-start h-7 px-2.5 rounded-md border border-border text-[12px] text-muted-foreground hover:bg-muted cursor-pointer transition-colors">
+								<Paperclip size={12} />
+								Attach files
+								<input
+									type="file"
+									multiple
+									className="hidden"
+									onChange={(e) => {
+										void handleAttach(e.target.files);
+										e.target.value = "";
+									}}
+								/>
+							</label>
+							{composeAttachments.map((a, i) => (
+								<div key={`${a.filename}-${i}`} className="flex items-center gap-2 text-[12px]">
+									<Paperclip size={11} className="text-muted-foreground" />
+									<span className="truncate">{a.filename}</span>
+									<span className="text-muted-foreground">
+										{(attachmentBytes(a) / 1024).toFixed(0)} KB
+									</span>
+									<button
+										type="button"
+										onClick={() =>
+											setComposeAttachments(composeAttachments.filter((_, j) => j !== i))
+										}
+										className="text-muted-foreground hover:text-foreground"
+										aria-label={`Remove ${a.filename}`}
+									>
+										<X size={12} />
+									</button>
+								</div>
+							))}
+							{attachError && <span className="text-[12px] text-red-600">{attachError}</span>}
+						</div>
 					</div>
 					<DialogFooter>
 						<button
